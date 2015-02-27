@@ -2,7 +2,11 @@ package io.vertx.ext.mongo.impl;
 
 import com.mongodb.WriteConcern;
 import com.mongodb.async.SingleResultCallback;
-import com.mongodb.async.client.*;
+import com.mongodb.async.client.FindIterable;
+import com.mongodb.async.client.MongoClient;
+import com.mongodb.async.client.MongoClients;
+import com.mongodb.async.client.MongoCollection;
+import com.mongodb.async.client.MongoDatabase;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
@@ -15,12 +19,16 @@ import io.vertx.ext.mongo.MongoService;
 import io.vertx.ext.mongo.UpdateOptions;
 import io.vertx.ext.mongo.WriteOption;
 import io.vertx.ext.mongo.impl.config.MongoClientOptionsParser;
+import org.bson.BsonDocument;
+import org.bson.BsonDocumentWrapper;
+import org.bson.codecs.configuration.CodecRegistry;
+import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-import static java.util.Objects.*;
+import static java.util.Objects.requireNonNull;
 
 /**
  * @author <a href="http://tfox.org">Tim Fox</a>
@@ -78,7 +86,8 @@ public class MongoServiceImpl implements MongoService {
     if (id == null) {
       coll.insertOne(document, convertCallback(resultHandler, wr -> document.getString(ID_FIELD)));
     } else {
-      coll.replaceOne(new JsonObject().put(ID_FIELD, document.getString(ID_FIELD)), document, convertCallback(resultHandler, result -> null));
+      coll.replaceOne(wrap(new JsonObject().put(ID_FIELD, document.getString(ID_FIELD))), document, convertCallback(resultHandler, result
+                                                                                                                                   -> null));
     }
     return this;
   }
@@ -124,9 +133,9 @@ public class MongoServiceImpl implements MongoService {
 
     MongoCollection<JsonObject> coll = getCollection(collection, options.getWriteOption());
     if (options.isMulti()) {
-      coll.updateMany(query, update, mongoUpdateOptions(options), convertCallback(resultHandler, result -> null));
+      coll.updateMany(wrap(query), wrap(update), mongoUpdateOptions(options), convertCallback(resultHandler, result -> null));
     } else {
-      coll.updateOne(query, update, mongoUpdateOptions(options), convertCallback(resultHandler, result -> null));
+      coll.updateOne(wrap(query), wrap(update), mongoUpdateOptions(options), convertCallback(resultHandler, result -> null));
     }
     return this;
   }
@@ -146,7 +155,7 @@ public class MongoServiceImpl implements MongoService {
     requireNonNull(resultHandler, "resultHandler cannot be null");
 
     MongoCollection<JsonObject> coll = getCollection(collection, options.getWriteOption());
-    coll.replaceOne(query, replace, mongoUpdateOptions(options), convertCallback(resultHandler, result -> null));
+    coll.replaceOne(wrap(query), replace, mongoUpdateOptions(options), convertCallback(resultHandler, result -> null));
     return this;
   }
 
@@ -174,7 +183,7 @@ public class MongoServiceImpl implements MongoService {
     requireNonNull(query, "query cannot be null");
     requireNonNull(resultHandler, "resultHandler cannot be null");
 
-    getCollection(collection).find(query).projection(fields).first(wrapCallback(resultHandler));
+    getCollection(collection).find(wrap(query)).projection(wrap(fields)).first(wrapCallback(resultHandler));
     return this;
   }
 
@@ -185,7 +194,7 @@ public class MongoServiceImpl implements MongoService {
     requireNonNull(resultHandler, "resultHandler cannot be null");
 
     MongoCollection<JsonObject> coll = getCollection(collection);
-    coll.count(query, wrapCallback(resultHandler));
+    coll.count(wrap(query), wrapCallback(resultHandler));
     return this;
   }
 
@@ -202,7 +211,7 @@ public class MongoServiceImpl implements MongoService {
     requireNonNull(resultHandler, "resultHandler cannot be null");
 
     MongoCollection<JsonObject> coll = getCollection(collection, writeOption);
-    coll.deleteMany(query, convertCallback(resultHandler, result -> null));
+    coll.deleteMany(wrap(query), convertCallback(resultHandler, result -> null));
     return this;
   }
 
@@ -219,7 +228,7 @@ public class MongoServiceImpl implements MongoService {
     requireNonNull(resultHandler, "resultHandler cannot be null");
 
     MongoCollection<JsonObject> coll = getCollection(collection, writeOption);
-    coll.deleteOne(query, convertCallback(resultHandler, result -> null));
+    coll.deleteOne(wrap(query), convertCallback(resultHandler, result -> null));
     return this;
   }
 
@@ -262,7 +271,7 @@ public class MongoServiceImpl implements MongoService {
   public MongoService runCommand(JsonObject command, Handler<AsyncResult<JsonObject>> resultHandler) {
     requireNonNull(command, "command cannot be null");
     requireNonNull(resultHandler, "resultHandler cannot be null");
-    db.executeCommand(command, JsonObject.class, wrapCallback(resultHandler));
+    db.executeCommand(wrap(command), JsonObject.class, wrapCallback(resultHandler));
     return this;
   }
 
@@ -296,7 +305,7 @@ public class MongoServiceImpl implements MongoService {
 
   private FindIterable<JsonObject> doFind(String collection, WriteOption writeOption, JsonObject query, FindOptions options) {
     MongoCollection<JsonObject> coll = getCollection(collection, writeOption);
-    FindIterable<JsonObject> find = coll.find(query, JsonObject.class);
+    FindIterable<JsonObject> find = coll.find(wrap(query), JsonObject.class);
     if (options.getLimit() != -1) {
       find.limit(options.getLimit());
     }
@@ -304,10 +313,10 @@ public class MongoServiceImpl implements MongoService {
       find.skip(options.getSkip());
     }
     if (options.getSort() != null) {
-      find.sort(options.getSort());
+      find.sort(wrap(options.getSort()));
     }
     if (options.getFields() != null) {
-      find.projection(options.getFields());
+      find.projection(wrap(options.getFields()));
     }
     return find;
   }
@@ -317,10 +326,28 @@ public class MongoServiceImpl implements MongoService {
   }
 
   private MongoCollection<JsonObject> getCollection(String name, WriteOption writeOption) {
-    return db.getCollection(name, JsonObject.class).withWriteConcern(WriteConcern.valueOf(writeOption.name()));
+    return writeOption == null ?  db.getCollection(name, JsonObject.class) :
+           db.getCollection(name, JsonObject.class).withWriteConcern(WriteConcern.valueOf(writeOption.name()));
   }
 
-  private static com.mongodb.client.model.UpdateOptions mongoUpdateOptions(UpdateOptions options) {
+    private static com.mongodb.client.model.UpdateOptions mongoUpdateOptions(UpdateOptions options) {
     return new com.mongodb.client.model.UpdateOptions().upsert(options.isUpsert());
+  }
+
+    Bson wrap(JsonObject wrapped) {
+        return wrapped == null ? null : new JsonObjectBsonAdapter(wrapped);
+    }
+
+  private static class JsonObjectBsonAdapter implements Bson {
+      private final JsonObject wrapped;
+
+      private JsonObjectBsonAdapter(final JsonObject wrapped) {
+          this.wrapped = wrapped;
+      }
+
+      @Override
+      public <TDocument> BsonDocument toBsonDocument(final Class<TDocument> aClass, final CodecRegistry codecRegistry) {
+          return new BsonDocumentWrapper<JsonObject>(wrapped, codecRegistry.get(JsonObject.class));
+      }
   }
 }

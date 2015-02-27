@@ -7,11 +7,12 @@ import com.mongodb.WriteConcern;
 import com.mongodb.async.client.MongoClientOptions;
 import com.mongodb.connection.ClusterSettings;
 import com.mongodb.connection.ConnectionPoolSettings;
-import com.mongodb.connection.SSLSettings;
 import com.mongodb.connection.ServerSettings;
 import com.mongodb.connection.SocketSettings;
+import com.mongodb.connection.SslSettings;
 import io.vertx.core.json.JsonObject;
-import io.vertx.ext.mongo.impl.codec.VertxCodecRegistry;
+import io.vertx.ext.mongo.impl.codec.json.JsonObjectCodec;
+import org.bson.codecs.configuration.CodecRegistryHelper;
 
 import java.util.List;
 import java.util.Objects;
@@ -27,7 +28,7 @@ public class MongoClientOptionsParser {
     Objects.requireNonNull(config);
 
     MongoClientOptions.Builder options = MongoClientOptions.builder();
-    options.codecRegistry(new VertxCodecRegistry());
+    options.codecRegistry(CodecRegistryHelper.fromCodec(new JsonObjectCodec()));
 
     // All parsers should support connection_string first
     String cs = config.getString("connection_string");
@@ -61,7 +62,7 @@ public class MongoClientOptionsParser {
     options.serverSettings(serverSettings);
 
     // SSLSettings
-    SSLSettings sslSettings = new SSLSettingsParser(connectionString, config).settings();
+    SslSettings sslSettings = new SSLSettingsParser(connectionString, config).settings();
     options.sslSettings(sslSettings);
 
     // WriteConcern
